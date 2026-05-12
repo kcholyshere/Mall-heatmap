@@ -1,2 +1,8 @@
 ipykernel
+nbconvert
 python-dotenv
+ultralytics
+opencv-python
+matplotlib
+numpy
+scipy

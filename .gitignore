@@ -79,6 +79,9 @@ target/
 # Mac OS-specific storage files
 .DS_Store
 
+# Project-local Claude guidelines
+CLAUDE.md
+
 # vim
 *.swp
 *.swo
@@ -89,8 +92,11 @@ target/
 # Exclude virtual environment
 .venv/
 
-# Exclude trained models
+# Exclude trained models and weights
 /models/
+*.pt
 
 # exclude data from source control by default
-# /data/
+/data/
+
+/agent_docs/
