@@ -20,12 +20,14 @@ def make_floor_canvas():
 
 
 def project_points(pts, H):
+    """Returns (N, 2) array of projected floor-plan pixel coordinates."""
     pts_h = np.hstack([pts, np.ones((len(pts), 1))])
     proj = (H @ pts_h.T).T
     return proj[:, :2] / proj[:, 2:3]
 
 
 def build_heatmap(df, sigma=SIGMA):
+    """Returns a (FLOOR_H, FLOOR_W) float array normalised to [0, 1]."""
     h, _, _ = np.histogram2d(
         df['px'], df['py'],
         bins=[FLOOR_W, FLOOR_H],
@@ -37,6 +39,7 @@ def build_heatmap(df, sigma=SIGMA):
 
 
 def backproject(heatmap_norm, H_inv, background, alpha=0.7):
+    """Returns a (CAM_H, CAM_W, 3) uint8 image with the heatmap blended onto the background frame."""
     hm_cam  = cv2.warpPerspective(heatmap_norm.astype(np.float32), H_inv, (CAM_W, CAM_H))
     hm_rgba = plt.colormaps['hot'](hm_cam)
     hm_rgb  = (hm_rgba[:, :, :3] * 255).astype(np.uint8)
