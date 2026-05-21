@@ -8,3 +8,5 @@ numpy
 scipy
 seaborn
 ruff
+streamlit
+streamlit-image-coordinates
