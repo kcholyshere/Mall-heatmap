@@ -8,14 +8,23 @@ cx, cy, R = 520, 850, 130
 CAM_W, CAM_H = 640, 480
 SIGMA = 30
 
+# Floor boundary from the 10-point manually selected homography
+FLOOR_POLYGON = np.int32([
+    [342, 681], [369, 552], [354, 409], [325, 206],
+    [564, 202], [666, 403], [691, 552], [700, 699],
+    [704, 860], [705, 1056],
+])
 
-def make_floor_canvas():
+
+def make_floor_canvas(polygon_pts=None):
     fp = np.ones((FLOOR_H, FLOOR_W, 3), dtype=np.uint8) * 245
     for x in range(0, FLOOR_W, 80):
         cv2.line(fp, (x, 0), (x, FLOOR_H), (215, 215, 215), 1)
     for y in range(0, FLOOR_H, 80):
         cv2.line(fp, (0, y), (FLOOR_W, y), (215, 215, 215), 1)
     cv2.ellipse(fp, (cx, cy), (R, R), 0, 0, 360, (170, 170, 170), 2)
+    if polygon_pts is not None:
+        cv2.polylines(fp, [polygon_pts.reshape(-1, 1, 2)], isClosed=False, color=(150, 150, 200), thickness=2)
     return fp
 
 
