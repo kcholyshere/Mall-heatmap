@@ -64,7 +64,7 @@ if uploaded:
             if not ret:
                 break
             frame_id += 1
-            if frame_id % sample_interval != 1:
+            if (frame_id - 1) % sample_interval != 0:
                 if total > 0:
                     progress.progress(frame_id / total, text=f"Frame {frame_id} / {total}")
                 continue
