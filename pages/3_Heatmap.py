@@ -39,7 +39,7 @@ with col_ctrl:
     alpha = st.slider("Heatmap opacity", 0.1, 1.0, 0.6, step=0.05)
     backproject_toggle = st.checkbox("Back-project onto camera frame")
 
-heatmap = build_heatmap(df, sigma=sigma)
+heatmap = build_heatmap(df, 'px', 'py', [FLOOR_W, FLOOR_H], [[0, FLOOR_W], [0, FLOOR_H]], sigma=sigma)
 
 with col_view:
     if backproject_toggle and st.session_state.get("reference_frame") is not None:

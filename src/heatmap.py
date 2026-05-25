@@ -35,13 +35,9 @@ def project_points(pts, H):
     return proj[:, :2] / proj[:, 2:3]
 
 
-def build_heatmap(df, sigma=SIGMA):
-    """Returns a (FLOOR_H, FLOOR_W) float array normalised to [0, 1]."""
-    h, _, _ = np.histogram2d(
-        df['px'], df['py'],
-        bins=[FLOOR_W, FLOOR_H],
-        range=[[0, FLOOR_W], [0, FLOOR_H]]
-    )
+def build_heatmap(df, xcol, ycol, bins, range_, sigma=SIGMA):
+    """Returns a normalised [0, 1] float array of shape (bins[1], bins[0])."""
+    h, _, _ = np.histogram2d(df[xcol], df[ycol], bins=bins, range=range_)
     h = h.T
     h = gaussian_filter(h, sigma=sigma)
     return h / h.max() if h.max() > 0 else h

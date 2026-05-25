@@ -63,7 +63,7 @@ if len(window_df) == 0:
     st.warning("No detections in this window. Try a wider time range.")
     st.stop()
 
-heatmap = build_heatmap(window_df, sigma=sigma)
+heatmap = build_heatmap(window_df, 'px', 'py', [FLOOR_W, FLOOR_H], [[0, FLOOR_W], [0, FLOOR_H]], sigma=sigma)
 
 fig, ax = plt.subplots(figsize=(4, 7))
 if floor_img is not None:
