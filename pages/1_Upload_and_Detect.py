@@ -51,16 +51,26 @@ if uploaded:
         model = load_model()
         cap = cv2.VideoCapture(video_path)
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        # Sample 1 frame per second; frame_id still increments for every frame
+        # so downstream time calculations remain correct.
+        sample_interval = max(1, round(fps))
         progress = st.progress(0, text="Detecting persons...")
         rows = []
         frame_id = 0
         start = time.time()
 
         while cap.isOpened():
-            ret, frame = cap.read()
+            ret = cap.grab()
             if not ret:
                 break
             frame_id += 1
+            if frame_id % sample_interval != 1:
+                if total > 0:
+                    progress.progress(frame_id / total, text=f"Frame {frame_id} / {total}")
+                continue
+            ret, frame = cap.retrieve()
+            if not ret:
+                continue
             results = model(frame, classes=[0], verbose=False)
             for box in results[0].boxes:
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
@@ -81,10 +91,13 @@ if uploaded:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path, index=False)
         st.session_state["detections_path"] = str(out_path)
+        st.session_state["total_frames"] = frame_id
 
         progress.empty()
+        sampled = total // sample_interval if total > 0 else len(df)
         st.success(
-            f"Done — **{len(df):,}** detections across **{frame_id}** frames in **{elapsed:.1f}s**"
+            f"Done — **{len(df):,}** detections from **{sampled:,}** sampled frames "
+            f"(1 per {sample_interval}) in **{elapsed:.1f}s**"
         )
         st.dataframe(df.head(10))
         st.info("Proceed to **Step 2 — Calibrate** in the sidebar.")
