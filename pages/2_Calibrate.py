@@ -31,6 +31,13 @@ for key, default in [
     if key not in st.session_state:
         st.session_state[key] = default
 
+# Reload saved homography from disk if session has none
+if st.session_state["homography"] is None:
+    _saved = Path(__file__).resolve().parent.parent / "data" / "processed" / "homography_session.npy"
+    if _saved.exists():
+        st.session_state["homography"] = np.load(_saved)
+        st.info("Loaded homography from previous session — proceed to Step 3 or recalibrate below.")
+
 # --- Floor plan ---
 st.subheader("Floor Plan")
 floor_upload = st.file_uploader(

@@ -1,5 +1,6 @@
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -16,6 +17,20 @@ def load_model():
     model_path = Path(__file__).resolve().parent.parent / "models" / "yolov8n.pt"
     return YOLO(str(model_path))
 
+
+st.subheader("Camera settings")
+col1, col2, col3 = st.columns(3)
+with col1:
+    fps = st.number_input("Camera FPS", min_value=0.1, max_value=120.0, value=1.0, step=0.5)
+    st.session_state["fps"] = fps
+with col2:
+    ref_date = st.date_input("Recording date", value=datetime.today().date())
+    st.session_state["ref_date"] = ref_date
+with col3:
+    ref_time = st.time_input("Frame 1 time of day", value=datetime.strptime("11:00", "%H:%M").time(), step=60)
+    st.session_state["ref_time"] = ref_time
+
+st.divider()
 
 if "detections_path" in st.session_state:
     st.info(f"Detections already loaded from `{st.session_state['detections_path']}`. "

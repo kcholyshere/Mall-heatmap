@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,31 +29,34 @@ H = st.session_state["homography"]
 df = load_and_project(st.session_state["detections_path"], H.tobytes())
 floor_img = st.session_state.get("floor_plan_img")
 
-# Parameters
-col1, col2, col3 = st.columns(3)
-with col1:
-    fps = st.number_input("Camera FPS", min_value=0.1, max_value=60.0, value=1.0, step=0.5)
-with col2:
-    ref_time = st.time_input("Frame 1 reference time",
-                              value=datetime.strptime("11:00", "%H:%M").time())
-with col3:
-    sigma = st.slider("Smoothing (sigma)", 5, 80, 30)
+fps = st.session_state.get("fps", 1.0)
+ref_date = st.session_state.get("ref_date", datetime.today().date())
+ref_time = st.session_state.get("ref_time", datetime.strptime("11:00", "%H:%M").time())
+ref_dt = datetime.combine(ref_date, ref_time)
 
+st.caption(f"Reference: frame 1 = {ref_dt.strftime('%Y-%m-%d %H:%M')} at {fps} FPS — change in Step 1.")
+
+sigma = st.slider("Smoothing (sigma)", 5, 80, 30)
 colormap = st.selectbox("Colormap", ["hot", "jet", "plasma", "YlOrRd"])
 
 col_start, col_end = st.columns(2)
 with col_start:
-    start_time = st.time_input("Start time", value=ref_time)
+    st.markdown("**Start**")
+    start_date = st.date_input("Start date", value=ref_date, key="start_date")
+    start_time = st.time_input("Start time", value=ref_time, step=60, key="start_time")
 with col_end:
-    end_time = st.time_input("End time",
-                              value=datetime.strptime("11:30", "%H:%M").time())
+    st.markdown("**End**")
+    end_date = st.date_input("End date", value=ref_date, key="end_date")
+    end_time = st.time_input("End time", value=(ref_dt + timedelta(minutes=30)).time(), step=60, key="end_time")
 
-ref_dt = datetime.combine(datetime.today(), ref_time)
-start_frame = max(1, int((datetime.combine(datetime.today(), start_time) - ref_dt).total_seconds() * fps) + 1)
-end_frame   = max(1, int((datetime.combine(datetime.today(), end_time)   - ref_dt).total_seconds() * fps) + 1)
+start_dt = datetime.combine(start_date, start_time)
+end_dt   = datetime.combine(end_date, end_time)
 
-if start_frame >= end_frame:
-    st.error("End time must be after start time.")
+start_frame = max(1, int((start_dt - ref_dt).total_seconds() * fps) + 1)
+end_frame   = max(1, int((end_dt   - ref_dt).total_seconds() * fps) + 1)
+
+if start_dt >= end_dt:
+    st.error("End must be after start.")
     st.stop()
 
 window_df = df[(df["frame_id"] >= start_frame) & (df["frame_id"] <= end_frame)]
@@ -70,7 +73,7 @@ if floor_img is not None:
     ax.imshow(floor_img)
 ax.imshow(heatmap, cmap=colormap, alpha=0.6, vmin=0, vmax=1,
           extent=[0, FLOOR_W, FLOOR_H, 0])
-ax.set_title(f"{start_time.strftime('%H:%M')} – {end_time.strftime('%H:%M')}")
+ax.set_title(f"{start_dt.strftime('%Y-%m-%d %H:%M')} – {end_dt.strftime('%H:%M')}")
 ax.axis("off")
 st.pyplot(fig)
 plt.close(fig)
