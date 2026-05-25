@@ -23,12 +23,17 @@ def load_detections(path):
 
 
 @st.cache_data
-def get_background_frame(video_path, detections_path):
-    """Return the frame with the fewest (but > 0) detections as an RGB array."""
+def get_background_frame(video_path, detections_path, fps, total_frames):
+    """Return the first sampled frame with 0 detections, falling back to fewest detections."""
     df = pd.read_csv(detections_path)
-    counts = df.groupby("frame_id").size()
-    positive = counts[counts > 0]
-    target_frame = int(positive.idxmin()) if len(positive) > 0 else 1
+    detected_frames = set(df["frame_id"].unique())
+    sample_interval = max(1, round(fps))
+    sampled = range(1, total_frames + 1, sample_interval)
+    zero_det = [f for f in sampled if f not in detected_frames]
+    if zero_det:
+        target_frame = zero_det[0]
+    else:
+        target_frame = int(df.groupby("frame_id").size().idxmin())
     cap = cv2.VideoCapture(video_path)
     cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame - 1)
     ret, frame = cap.read()
@@ -66,7 +71,7 @@ else:
     vmax = 1
 
 video_path = st.session_state.get("video_path")
-bg = get_background_frame(video_path, st.session_state["detections_path"]) if video_path else None
+bg = get_background_frame(video_path, st.session_state["detections_path"], fps, total_frames) if video_path else None
 
 with col_view:
     fig, ax = plt.subplots(figsize=(8, 6))
