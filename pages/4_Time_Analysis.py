@@ -25,6 +25,7 @@ st.caption(f"Reference: frame 1 = {ref_dt.strftime('%Y-%m-%d %H:%M')} at {fps} F
 
 sigma = st.slider("Smoothing (sigma)", 5, 80, 30)
 colormap = st.selectbox("Colormap", ["hot", "jet", "plasma", "YlOrRd"])
+time_norm = st.checkbox("Time-normalised (people/min)", value=True)
 
 col_start, col_end = st.columns(2)
 with col_start:
@@ -56,11 +57,22 @@ if len(window_raw) == 0:
     st.stop()
 
 # --- Camera-space heatmap (default) ---
-cam_heatmap = build_heatmap(window_raw, "x", "y", [CAM_W, CAM_H], [[0, CAM_W], [0, CAM_H]], sigma=sigma)
+window_min = max((end_dt - start_dt).total_seconds() / 60, 1e-6)
+raw_heatmap = build_heatmap(window_raw, "x", "y", [CAM_W, CAM_H], [[0, CAM_W], [0, CAM_H]],
+                            sigma=sigma, normalise=False)
+if time_norm:
+    cam_heatmap = raw_heatmap / window_min
+    cbar_label = "people / min"
+    vmax = cam_heatmap.max() if cam_heatmap.max() > 0 else 1
+else:
+    cam_heatmap = raw_heatmap / raw_heatmap.max() if raw_heatmap.max() > 0 else raw_heatmap
+    cbar_label = "relative occupancy"
+    vmax = 1
 
 fig, ax = plt.subplots(figsize=(8, 6))
-ax.imshow(cam_heatmap, cmap=colormap, alpha=0.8, vmin=0, vmax=1,
-          extent=[0, CAM_W, CAM_H, 0])
+im = ax.imshow(cam_heatmap, cmap=colormap, alpha=0.8, vmin=0, vmax=vmax,
+               extent=[0, CAM_W, CAM_H, 0])
+plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
 ax.set_title(f"{start_dt.strftime('%Y-%m-%d %H:%M')} – {end_dt.strftime('%H:%M')}")
 ax.axis("off")
 st.pyplot(fig)

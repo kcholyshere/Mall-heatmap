@@ -47,9 +47,23 @@ with col_ctrl:
     sigma = st.slider("Smoothing (sigma)", 5, 80, 30)
     colormap = st.selectbox("Colormap", ["hot", "jet", "plasma", "YlOrRd"])
     alpha = st.slider("Heatmap opacity", 0.1, 1.0, 0.6, step=0.05)
+    time_norm = st.checkbox("Time-normalised (people/min)", value=True)
 
 # --- Camera-space heatmap (default, no calibration needed) ---
-cam_heatmap = build_heatmap(df_raw, "x", "y", [CAM_W, CAM_H], [[0, CAM_W], [0, CAM_H]], sigma=sigma)
+fps = st.session_state.get("fps", 1.0)
+total_frames = st.session_state.get("total_frames") or df_raw["frame_id"].max()
+duration_min = max(total_frames / fps / 60, 1e-6)
+
+raw_heatmap = build_heatmap(df_raw, "x", "y", [CAM_W, CAM_H], [[0, CAM_W], [0, CAM_H]],
+                            sigma=sigma, normalise=False)
+if time_norm:
+    cam_heatmap = raw_heatmap / duration_min
+    cbar_label = "people / min"
+    vmax = cam_heatmap.max() if cam_heatmap.max() > 0 else 1
+else:
+    cam_heatmap = raw_heatmap / raw_heatmap.max() if raw_heatmap.max() > 0 else raw_heatmap
+    cbar_label = "relative occupancy"
+    vmax = 1
 
 video_path = st.session_state.get("video_path")
 bg = get_background_frame(video_path, st.session_state["detections_path"]) if video_path else None
@@ -58,8 +72,9 @@ with col_view:
     fig, ax = plt.subplots(figsize=(8, 6))
     if bg is not None:
         ax.imshow(bg)
-    ax.imshow(cam_heatmap, cmap=colormap, alpha=alpha, vmin=0, vmax=1,
-              extent=[0, CAM_W, CAM_H, 0])
+    im = ax.imshow(cam_heatmap, cmap=colormap, alpha=alpha, vmin=0, vmax=vmax,
+                   extent=[0, CAM_W, CAM_H, 0])
+    plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
     ax.axis("off")
     ax.set_title("Camera-space occupancy heatmap")
     st.pyplot(fig)
@@ -113,8 +128,9 @@ if st.button("Export heatmap PNG"):
     fig, ax = plt.subplots(figsize=(8, 6))
     if bg is not None:
         ax.imshow(bg)
-    ax.imshow(cam_heatmap, cmap=colormap, alpha=alpha, vmin=0, vmax=1,
-              extent=[0, CAM_W, CAM_H, 0])
+    im = ax.imshow(cam_heatmap, cmap=colormap, alpha=alpha, vmin=0, vmax=vmax,
+                   extent=[0, CAM_W, CAM_H, 0])
+    plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
     ax.axis("off")
     out_path = out_dir / "heatmap_client.png"
     fig.savefig(out_path, bbox_inches="tight", dpi=150)
