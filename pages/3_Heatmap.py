@@ -7,7 +7,8 @@ import pandas as pd
 import streamlit as st
 
 from src.heatmap import (CAM_H, CAM_W, FLOOR_H, FLOOR_W,
-                         backproject, build_heatmap, project_points)
+                         backproject, build_heatmap, compute_confidence_cutoff,
+                         project_points)
 
 st.set_page_config(page_title="Heatmap", layout="wide")
 st.title("Step 3 — Heatmap")
@@ -53,6 +54,7 @@ with col_ctrl:
     colormap = st.selectbox("Colormap", ["hot", "jet", "plasma", "YlOrRd"])
     alpha = st.slider("Heatmap opacity", 0.1, 1.0, 0.6, step=0.05)
     time_norm = st.checkbox("Time-normalised (people/min)", value=True)
+    conf_threshold = st.slider("Confidence threshold", 0.1, 0.9, 0.5, step=0.05)
 
 # --- Camera-space heatmap (default, no calibration needed) ---
 fps = st.session_state.get("fps", 1.0)
@@ -73,6 +75,8 @@ else:
 video_path = st.session_state.get("video_path")
 bg = get_background_frame(video_path, st.session_state["detections_path"], fps, total_frames) if video_path else None
 
+cutoff_y = compute_confidence_cutoff(df_raw, threshold=conf_threshold)
+
 with col_view:
     fig, ax = plt.subplots(figsize=(8, 6))
     if bg is not None:
@@ -80,6 +84,10 @@ with col_view:
     im = ax.imshow(cam_heatmap, cmap=colormap, alpha=alpha, vmin=0, vmax=vmax,
                    extent=[0, CAM_W, CAM_H, 0])
     plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
+    if cutoff_y is not None:
+        ax.axhline(cutoff_y, color="white", linestyle="--", linewidth=1.5, alpha=0.8)
+        ax.text(5, cutoff_y - 4, f"Reliability boundary (conf ≥ {conf_threshold:.2f})",
+                color="white", fontsize=8, va="bottom")
     ax.axis("off")
     ax.set_title("Camera-space occupancy heatmap")
     st.pyplot(fig)
@@ -136,6 +144,10 @@ if st.button("Export heatmap PNG"):
     im = ax.imshow(cam_heatmap, cmap=colormap, alpha=alpha, vmin=0, vmax=vmax,
                    extent=[0, CAM_W, CAM_H, 0])
     plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
+    if cutoff_y is not None:
+        ax.axhline(cutoff_y, color="white", linestyle="--", linewidth=1.5, alpha=0.8)
+        ax.text(5, cutoff_y - 4, f"Reliability boundary (conf ≥ {conf_threshold:.2f})",
+                color="white", fontsize=8, va="bottom")
     ax.axis("off")
     out_path = out_dir / "heatmap_client.png"
     fig.savefig(out_path, bbox_inches="tight", dpi=150)

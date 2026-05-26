@@ -49,6 +49,25 @@ def build_heatmap(df, xcol, ycol, bins, range_, sigma=SIGMA, normalise=True):
     return h
 
 
+def compute_confidence_cutoff(df, threshold=0.5, n_bands=48):
+    """Return the y-pixel of the upper edge of the reliable detection zone.
+
+    Bins detections into n_bands horizontal strips (top-to-bottom). Returns
+    the y-pixel of the topmost band whose mean confidence meets the threshold.
+    Returns None when confidence data is absent or all bands are above threshold.
+    """
+    if df.empty or "confidence" not in df.columns:
+        return None
+    band_h = CAM_H / n_bands
+    df = df.copy()
+    df["_band"] = (df["y"] / band_h).astype(int).clip(0, n_bands - 1)
+    means = df.groupby("_band")["confidence"].mean()
+    reliable = means[means >= threshold]
+    if reliable.empty:
+        return None
+    return int(reliable.index.min() * band_h)
+
+
 def backproject(heatmap_norm, H_inv, background, alpha=0.7):
     """Returns a (CAM_H, CAM_W, 3) uint8 image with the heatmap blended onto the background frame."""
     hm_cam  = cv2.warpPerspective(heatmap_norm.astype(np.float32), H_inv, (CAM_W, CAM_H))

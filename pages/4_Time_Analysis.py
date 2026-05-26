@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from src.heatmap import (CAM_H, CAM_W, FLOOR_H, FLOOR_W,
-                         build_heatmap, project_points)
+                         build_heatmap, compute_confidence_cutoff, project_points)
 
 st.set_page_config(page_title="Time Analysis", layout="wide")
 st.title("Step 4 — Time-Based Analysis")
@@ -26,6 +26,7 @@ st.caption(f"Reference: frame 1 = {ref_dt.strftime('%Y-%m-%d %H:%M')} at {fps} F
 sigma = st.slider("Smoothing (sigma)", 5, 80, 30)
 colormap = st.selectbox("Colormap", ["hot", "jet", "plasma", "YlOrRd"])
 time_norm = st.checkbox("Time-normalised (people/min)", value=True)
+conf_threshold = st.slider("Confidence threshold", 0.1, 0.9, 0.5, step=0.05)
 
 col_start, col_end = st.columns(2)
 with col_start:
@@ -69,10 +70,16 @@ else:
     cbar_label = "relative occupancy"
     vmax = 1
 
+cutoff_y = compute_confidence_cutoff(window_raw, threshold=conf_threshold)
+
 fig, ax = plt.subplots(figsize=(8, 6))
 im = ax.imshow(cam_heatmap, cmap=colormap, alpha=0.8, vmin=0, vmax=vmax,
                extent=[0, CAM_W, CAM_H, 0])
 plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
+if cutoff_y is not None:
+    ax.axhline(cutoff_y, color="white", linestyle="--", linewidth=1.5, alpha=0.8)
+    ax.text(5, cutoff_y - 4, f"Reliability boundary (conf ≥ {conf_threshold:.2f})",
+            color="white", fontsize=8, va="bottom")
 ax.set_title(f"{start_dt.strftime('%Y-%m-%d %H:%M')} – {end_dt.strftime('%H:%M')}")
 ax.axis("off")
 st.pyplot(fig)
