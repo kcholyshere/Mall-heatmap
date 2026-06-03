@@ -9,8 +9,7 @@ import streamlit as st
 from calibration_panel import render_calibration
 from src.heatmap import (CAM_H, CAM_W, FLOOR_H, FLOOR_W,
                          backproject, build_heatmap, build_reliability_mask,
-                         compute_confidence_cutoff, pick_background_frame,
-                         project_points, sampled_frame_count)
+                         pick_background_frame, project_points, sampled_frame_count)
 
 # Off-palette pink for the model-reliability overlay - deliberately unlike any heatmap colourmap.
 RELIABILITY_COLOR = "#FF2BD6"
@@ -96,26 +95,27 @@ if relative:
     vmax = 1
 else:
     cam_heatmap = raw_heatmap / n_sampled
-    cbar_label = "avg people present"
+    cbar_label = "occupancy"
     vmax = cam_heatmap.max() if cam_heatmap.max() > 0 else 1
 
-cutoff_y = compute_confidence_cutoff(df_raw, threshold=conf_threshold, frame_h=frame_h)
+avg_in_view = len(df_plot) / n_sampled
 reliability_mask = (build_reliability_mask(df_raw, threshold=conf_threshold, frame_w=frame_w, frame_h=frame_h)
                     if show_reliability else None)
 
 with col_view:
+    if not relative:
+        st.metric("Average people in view", f"{avg_in_view:.1f}")
     fig, ax = plt.subplots(figsize=(8, 6))
     if bg is not None:
         ax.imshow(bg)
     im = ax.imshow(cam_heatmap, cmap=colormap, alpha=alpha, vmin=0, vmax=vmax,
                    extent=[0, frame_w, frame_h, 0])
-    plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
+    cbar = plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
+    if not relative:
+        cbar.set_ticks([0, vmax])
+        cbar.set_ticklabels(["low", "high"])
     if reliability_mask is not None:
         overlay_reliability(ax, reliability_mask, frame_w, frame_h)
-    if cutoff_y is not None:
-        ax.axhline(cutoff_y, color="white", linestyle="--", linewidth=1.5, alpha=0.8)
-        ax.text(5, cutoff_y - 4, f"Reliability boundary (conf ≥ {conf_threshold:.2f})",
-                color="white", fontsize=8, va="bottom")
     ax.axis("off")
     ax.set_title("Camera-space occupancy heatmap")
     st.pyplot(fig)
@@ -125,8 +125,8 @@ with col_view:
     st.download_button("Download heatmap PNG", buf.getvalue(),
                        file_name="heatmap.png", mime="image/png", key="dl_camera")
     if not relative:
-        st.caption("Each cell is the average number of people present per sampled frame "
-                   "(~1 frame/s) - small decimals are normal; the spatial pattern is the point. "
+        st.caption("Colour shows where people concentrate (low -> high); the "
+                   "'Average people in view' figure above is the honest scene-wide magnitude. "
                    "For a genuine footfall *rate*, use the Tracking page (Step 3).")
     if show_reliability:
         st.caption("Pink hatched zones - low model reliability (far field / weak confidence). "

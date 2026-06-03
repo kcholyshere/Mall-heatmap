@@ -6,8 +6,8 @@ import pandas as pd
 import streamlit as st
 
 from src.heatmap import (CAM_H, CAM_W, FLOOR_H, FLOOR_W,
-                         build_heatmap, compute_confidence_cutoff,
-                         pick_background_frame, project_points, sampled_frame_count)
+                         build_heatmap, pick_background_frame, project_points,
+                         sampled_frame_count)
 from src.tracking import compute_dwell, footfall_stats, moving_track_ids
 
 st.set_page_config(page_title="Time Analysis", layout="wide")
@@ -104,21 +104,21 @@ if relative:
     vmax = 1
 else:
     cam_heatmap = raw_heatmap / n_sampled
-    cbar_label = "avg people present"
+    cbar_label = "occupancy"
     vmax = cam_heatmap.max() if cam_heatmap.max() > 0 else 1
 
-cutoff_y = compute_confidence_cutoff(window_raw, threshold=conf_threshold, frame_h=frame_h)
+if not relative:
+    st.metric("Average people in view", f"{len(window_plot) / n_sampled:.1f}")
 
 fig, ax = plt.subplots(figsize=(8, 6))
 if bg is not None:
     ax.imshow(bg)
 im = ax.imshow(cam_heatmap, cmap=colormap, alpha=0.6, vmin=0, vmax=vmax,
                extent=[0, frame_w, frame_h, 0])
-plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
-if cutoff_y is not None:
-    ax.axhline(cutoff_y, color="white", linestyle="--", linewidth=1.5, alpha=0.8)
-    ax.text(5, cutoff_y - 4, f"Reliability boundary (conf ≥ {conf_threshold:.2f})",
-            color="white", fontsize=8, va="bottom")
+cbar = plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
+if not relative:
+    cbar.set_ticks([0, vmax])
+    cbar.set_ticklabels(["low", "high"])
 ax.set_title(f"{start_dt.strftime('%Y-%m-%d %H:%M')} - {end_dt.strftime('%H:%M')}")
 ax.axis("off")
 st.pyplot(fig)

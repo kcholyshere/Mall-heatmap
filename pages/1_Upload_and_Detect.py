@@ -7,6 +7,7 @@ from pathlib import Path
 import cv2
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from ultralytics import YOLO
 
 from src.tracking import run_tracking
@@ -172,6 +173,31 @@ if video_path:
             f"**{processed:,}** frames in **{elapsed:.1f}s**"
         )
         st.info("Open the Tracking page (Step 3) in the sidebar.")
+        # Long runs let the user look away - chime + desktop notification on completion.
+        # Both fire while the tab is backgrounded; the chime is the reliable part (some
+        # browsers limit notification permission requests inside component iframes).
+        components.html(
+            """
+            <script>
+            try {
+              const ctx = new (window.AudioContext || window.webkitAudioContext)();
+              const o = ctx.createOscillator(), g = ctx.createGain();
+              o.connect(g); g.connect(ctx.destination);
+              o.frequency.value = 880; g.gain.value = 0.1;
+              o.start(); o.stop(ctx.currentTime + 0.3);
+            } catch (e) {}
+            if ("Notification" in window) {
+              const show = () => new Notification("Tracking complete",
+                  {body: "Your video has been tracked - open Step 3."});
+              if (Notification.permission === "granted") { show(); }
+              else if (Notification.permission !== "denied") {
+                Notification.requestPermission().then(p => { if (p === "granted") show(); });
+              }
+            }
+            </script>
+            """,
+            height=0,
+        )
 
     elif run_requested:
         model = load_model()

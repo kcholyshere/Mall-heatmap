@@ -90,22 +90,15 @@ c1.metric("Unique visitors", f"{unique:,}")
 c2.metric("Throughput", f"{throughput:.1f} people/min")
 c3.metric("Mean time in scene", f"{durations.mean():.1f} s")
 st.caption("Each person is counted once via their track ID, so this is a genuine footfall "
-           "rate - unlike the heatmap's per-frame people/min.")
-fig, ax = plt.subplots(figsize=(6, 2.5))
-ax.hist(durations.values, bins=20, color="#3b7dd8")
-ax.set_xlabel("seconds in scene")
-ax.set_ylabel("people")
-ax.set_title("Time-in-scene distribution")
-st.pyplot(fig)
-plt.close(fig)
+           "rate - unlike the heatmap's scene-wide average occupancy.")
 
 # --- B. Trajectories ---
 st.divider()
 st.header("Trajectories")
-max_len = int(df.groupby("track_id").size().max())
-min_len = st.slider("Minimum track length (frames)", 1, max(2, max_len), min(5, max_len),
-                    help="Hide very short tracks - usually flicker or false positives.")
-trajectories = build_trajectories(df, min_len=min_len)
+max_len_s = max(0.2, round(df.groupby("track_id").size().max() / fps, 1))
+min_secs = st.slider("Minimum track length (seconds)", 0.0, max_len_s, min(0.3, max_len_s),
+                     step=0.1, help="Hide very short tracks - usually flicker or false positives.")
+trajectories = build_trajectories(df, min_len=max(1, int(min_secs * fps)))
 
 fig, ax = plt.subplots(figsize=(8, 6))
 if bg is not None:
@@ -147,3 +140,13 @@ fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
 plt.close(fig)
 st.download_button("Download dwell-time PNG", buf.getvalue(),
                    file_name="dwell_time.png", mime="image/png", key="dl_dwell")
+
+# --- D. Time-in-scene distribution (least prominent) ---
+st.divider()
+st.subheader("Time-in-scene distribution")
+fig, ax = plt.subplots(figsize=(5, 2))
+ax.hist(durations.values, bins=20, color="#3b7dd8")
+ax.set_xlabel("seconds in scene")
+ax.set_ylabel("people")
+st.pyplot(fig)
+plt.close(fig)
