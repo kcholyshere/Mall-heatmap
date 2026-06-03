@@ -1,17 +1,35 @@
-from pathlib import Path
+import io
 
-import cv2
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
 
+from calibration_panel import render_calibration
 from src.heatmap import (CAM_H, CAM_W, FLOOR_H, FLOOR_W,
-                         backproject, build_heatmap, compute_confidence_cutoff,
+                         backproject, build_heatmap, build_reliability_mask,
+                         compute_confidence_cutoff, pick_background_frame,
                          project_points)
 
+# Off-palette pink for the model-reliability overlay - deliberately unlike any heatmap colourmap.
+RELIABILITY_COLOR = "#FF2BD6"
+
+
+def overlay_reliability(ax, mask, frame_w, frame_h):
+    """Mark the low-reliability zone with diagonal hatching (a texture, not a heat blob, so it
+    can't be confused with the heatmap) plus a thin boundary, in an off-palette pink."""
+    rows, cols = mask.shape
+    xs = np.linspace(0, frame_w, cols)
+    ys = np.linspace(0, frame_h, rows)
+    with mpl.rc_context({"hatch.color": RELIABILITY_COLOR, "hatch.linewidth": 0.9}):
+        ax.contourf(xs, ys, mask, levels=[0.5, 2.0], colors="none", hatches=["//"], zorder=5)
+    ax.contour(xs, ys, mask, levels=[0.5], colors=RELIABILITY_COLOR, linewidths=1.2, zorder=6)
+    ax.set_xlim(0, frame_w)
+    ax.set_ylim(frame_h, 0)
+
 st.set_page_config(page_title="Heatmap", layout="wide")
-st.title("Step 3 — Heatmap")
+st.title("Step 2 - Heatmap")
 
 if "detections_path" not in st.session_state:
     st.warning("Complete Step 1 first.")
@@ -25,23 +43,7 @@ def load_detections(path):
 
 @st.cache_data
 def get_background_frame(video_path, detections_path, fps, total_frames):
-    """Return the first sampled frame with 0 detections, falling back to fewest detections."""
-    df = pd.read_csv(detections_path)
-    detected_frames = set(df["frame_id"].unique())
-    sample_interval = max(1, round(fps))
-    sampled = range(1, total_frames + 1, sample_interval)
-    zero_det = [f for f in sampled if f not in detected_frames]
-    if zero_det:
-        target_frame = zero_det[0]
-    else:
-        target_frame = int(df.groupby("frame_id").size().idxmin())
-    cap = cv2.VideoCapture(video_path)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame - 1)
-    ret, frame = cap.read()
-    cap.release()
-    if ret:
-        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    return None
+    return pick_background_frame(video_path, detections_path, fps, total_frames)
 
 
 df_raw = load_detections(st.session_state["detections_path"])
@@ -54,14 +56,36 @@ with col_ctrl:
     colormap = st.selectbox("Colormap", ["hot", "jet", "plasma", "YlOrRd"])
     alpha = st.slider("Heatmap opacity", 0.1, 1.0, 0.6, step=0.05)
     time_norm = st.checkbox("Time-normalised (people/min)", value=True)
-    conf_threshold = st.slider("Confidence threshold", 0.1, 0.9, 0.5, step=0.05)
+    conf_threshold = st.slider(
+        "Confidence threshold", 0.1, 0.9, 0.5, step=0.05,
+        help="Minimum YOLO confidence to count a detection. Raising it removes weak/false "
+             "detections (e.g. a static object mistaken for a person) but also drops "
+             "uncertain far-field people.")
+    show_reliability = st.checkbox(
+        "Show model-reliability overlay", value=False,
+        help="Shades zones where YOLO under-detects (far field and weak-confidence "
+             "cells). Absence of heat in a shaded zone does NOT mean the area is empty - "
+             "the model likely cannot see people there. Driven by the confidence threshold.")
 
 # --- Camera-space heatmap (default, no calibration needed) ---
 fps = st.session_state.get("fps", 1.0)
 total_frames = st.session_state.get("total_frames") or df_raw["frame_id"].max()
 duration_min = max(total_frames / fps / 60, 1e-6)
 
-raw_heatmap = build_heatmap(df_raw, "x", "y", [CAM_W, CAM_H], [[0, CAM_W], [0, CAM_H]],
+video_path = st.session_state.get("video_path")
+bg = get_background_frame(video_path, st.session_state["detections_path"], fps, total_frames) if video_path else None
+# Frame size = the displayed background's own dimensions (guarantees the heatmap aligns);
+# fall back to session, then the Mall default.
+if bg is not None:
+    frame_h, frame_w = bg.shape[:2]
+else:
+    frame_w, frame_h = st.session_state.get("frame_size", (CAM_W, CAM_H))
+
+# Only count detections the model is at least `conf_threshold` sure about. This drops weak
+# false positives (e.g. a static object repeatedly mistaken for a person) from the heatmap;
+# the reliability overlay below is still computed on the full set to show where we discarded.
+df_plot = df_raw[df_raw["confidence"] >= conf_threshold] if "confidence" in df_raw.columns else df_raw
+raw_heatmap = build_heatmap(df_plot, "x", "y", [frame_w, frame_h], [[0, frame_w], [0, frame_h]],
                             sigma=sigma, normalise=False)
 if time_norm:
     cam_heatmap = raw_heatmap / duration_min
@@ -72,18 +96,19 @@ else:
     cbar_label = "relative occupancy"
     vmax = 1
 
-video_path = st.session_state.get("video_path")
-bg = get_background_frame(video_path, st.session_state["detections_path"], fps, total_frames) if video_path else None
-
-cutoff_y = compute_confidence_cutoff(df_raw, threshold=conf_threshold)
+cutoff_y = compute_confidence_cutoff(df_raw, threshold=conf_threshold, frame_h=frame_h)
+reliability_mask = (build_reliability_mask(df_raw, threshold=conf_threshold, frame_w=frame_w, frame_h=frame_h)
+                    if show_reliability else None)
 
 with col_view:
     fig, ax = plt.subplots(figsize=(8, 6))
     if bg is not None:
         ax.imshow(bg)
     im = ax.imshow(cam_heatmap, cmap=colormap, alpha=alpha, vmin=0, vmax=vmax,
-                   extent=[0, CAM_W, CAM_H, 0])
+                   extent=[0, frame_w, frame_h, 0])
     plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
+    if reliability_mask is not None:
+        overlay_reliability(ax, reliability_mask, frame_w, frame_h)
     if cutoff_y is not None:
         ax.axhline(cutoff_y, color="white", linestyle="--", linewidth=1.5, alpha=0.8)
         ax.text(5, cutoff_y - 4, f"Reliability boundary (conf ≥ {conf_threshold:.2f})",
@@ -91,40 +116,66 @@ with col_view:
     ax.axis("off")
     ax.set_title("Camera-space occupancy heatmap")
     st.pyplot(fig)
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
     plt.close(fig)
+    st.download_button("Download heatmap PNG", buf.getvalue(),
+                       file_name="heatmap.png", mime="image/png", key="dl_camera")
+    if show_reliability:
+        st.caption("Pink hatched zones - low model reliability (far field / weak confidence). "
+                   "Occupancy here is under-counted; an un-hatched-but-empty area is genuinely empty, "
+                   "a hatched-but-empty area may simply be a model blind spot.")
 
-# --- Top-down view (opt-in, requires calibration) ---
-with st.expander("Top-down floor plan view (requires calibration)"):
+# --- Advanced: top-down floor-plan view (optional) ---
+# Gated by a checkbox (not an expander) so the calibration UI survives the per-click reruns.
+st.divider()
+if st.checkbox("Advanced - top-down floor-plan view (requires calibration)"):
+    if st.session_state.get("homography") is None:
+        st.caption("Map the camera view to a floor plan below. Optional - the camera-space "
+                   "heatmap above is the main output.")
+        render_calibration()
+
     H = st.session_state.get("homography")
-    if H is None:
-        st.info("Complete Step 2 — Calibrate to enable the top-down view.")
-    else:
+    if H is not None:
+        floor_w, floor_h = st.session_state.get("floor_size", (FLOOR_W, FLOOR_H))
+        td_sigma = st.slider(
+            "Top-down smoothing", 2, 40, 12, key="td_sigma",
+            help="Separate from the camera-view smoothing - the floor plan is lower-resolution, "
+                 "so it needs a smaller blur to avoid the over-smoothing the camera value causes.")
+
         @st.cache_data
-        def load_and_project(path, h_bytes):
+        def load_and_project(path, h_bytes, fw, fh, conf):
             _H = np.frombuffer(h_bytes).reshape(3, 3)
             _df = pd.read_csv(path)
+            if "confidence" in _df.columns:
+                _df = _df[_df["confidence"] >= conf]
             proj = project_points(_df[["x", "y"]].values, _H)
             _df = _df.copy()
             _df["px"], _df["py"] = proj[:, 0], proj[:, 1]
-            return _df[(_df["px"] >= 0) & (_df["px"] < FLOOR_W) &
-                       (_df["py"] >= 0) & (_df["py"] < FLOOR_H)]
+            return _df[(_df["px"] >= 0) & (_df["px"] < fw) &
+                       (_df["py"] >= 0) & (_df["py"] < fh)]
 
-        df_proj = load_and_project(st.session_state["detections_path"], H.tobytes())
+        df_proj = load_and_project(st.session_state["detections_path"], H.tobytes(),
+                                   floor_w, floor_h, conf_threshold)
         floor_img = st.session_state.get("floor_plan_img")
         heatmap_td = build_heatmap(df_proj, "px", "py",
-                                   [FLOOR_W, FLOOR_H], [[0, FLOOR_W], [0, FLOOR_H]], sigma=sigma)
+                                   [floor_w, floor_h], [[0, floor_w], [0, floor_h]], sigma=td_sigma)
 
         td_col1, td_col2 = st.columns(2)
         with td_col1:
-            fig, ax = plt.subplots(figsize=(4, 7))
+            fig, ax = plt.subplots(figsize=(5, 5 * floor_h / floor_w))
             if floor_img is not None:
                 ax.imshow(floor_img)
             ax.imshow(heatmap_td, cmap=colormap, alpha=alpha, vmin=0, vmax=1,
-                      extent=[0, FLOOR_W, FLOOR_H, 0])
+                      extent=[0, floor_w, floor_h, 0])
             ax.axis("off")
             ax.set_title("Top-down floor plan")
             st.pyplot(fig)
+            td_buf = io.BytesIO()
+            fig.savefig(td_buf, format="png", bbox_inches="tight", dpi=150)
             plt.close(fig)
+            st.download_button("Download top-down PNG", td_buf.getvalue(),
+                               file_name="heatmap_topdown.png", mime="image/png", key="dl_topdown")
 
         with td_col2:
             ref_frame = st.session_state.get("reference_frame")
@@ -132,24 +183,10 @@ with st.expander("Top-down floor plan view (requires calibration)"):
                 H_inv = np.linalg.inv(H)
                 blended = backproject(heatmap_td, H_inv, ref_frame)
                 st.image(blended, caption="Back-projected onto camera frame",
-                         use_container_width=True)
+                         width="stretch")
 
-# --- Export ---
-out_dir = Path(__file__).resolve().parent.parent / "reports" / "figures"
-out_dir.mkdir(parents=True, exist_ok=True)
-if st.button("Export heatmap PNG"):
-    fig, ax = plt.subplots(figsize=(8, 6))
-    if bg is not None:
-        ax.imshow(bg)
-    im = ax.imshow(cam_heatmap, cmap=colormap, alpha=alpha, vmin=0, vmax=vmax,
-                   extent=[0, CAM_W, CAM_H, 0])
-    plt.colorbar(im, ax=ax, shrink=0.6, label=cbar_label)
-    if cutoff_y is not None:
-        ax.axhline(cutoff_y, color="white", linestyle="--", linewidth=1.5, alpha=0.8)
-        ax.text(5, cutoff_y - 4, f"Reliability boundary (conf ≥ {conf_threshold:.2f})",
-                color="white", fontsize=8, va="bottom")
-    ax.axis("off")
-    out_path = out_dir / "heatmap_client.png"
-    fig.savefig(out_path, bbox_inches="tight", dpi=150)
-    plt.close(fig)
-    st.success(f"Saved to `{out_path}`")
+        if st.button("Recalibrate"):
+            for k in ("homography", "pairs", "pending_camera", "click_stage"):
+                st.session_state.pop(k, None)
+            st.session_state["force_recalibrate"] = True  # don't let the disk copy reload
+            st.rerun()
