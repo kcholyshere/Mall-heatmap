@@ -8,19 +8,18 @@ st.write("Spatial occupancy heatmap pipeline for retail foot-traffic analysis.")
 st.markdown("""
 ## How to use
 
-**Core flow (no calibration required):**
-
 | Step | Page | What it does |
 |------|------|-------------|
 | 1 | Upload & Detect | Upload a surveillance video and run YOLOv8 person detection |
-| 3 | Heatmap | Camera-space occupancy heatmap overlaid on the emptiest frame |
-| 4 | Time Analysis | Filter by time window to compare traffic patterns across periods |
+| 2 | Heatmap | Camera-space occupancy heatmap overlaid on the emptiest frame |
+| 3 | Time Analysis | Filter by time window to compare traffic patterns across periods |
+| 4 | Tracking Insights | Unique footfall, dwell-time and person trajectories |
 
-**Optional — top-down floor plan view:**
+**Tracking (Step 4):** tick *“Enable person tracking”* in Step 1 to follow each person across
+frames. This unlocks genuine footfall counts, dwell-time and trajectories - it needs dense
+(~25-30 fps) video and is slower than the heatmap detection.
 
-| Step | Page | What it does |
-|------|------|-------------|
-| 2 | Calibrate | Pick reference point pairs to compute the camera → floor plan homography |
-
-Complete Step 2 then open the *Top-down floor plan view* expander on the Heatmap page.
+**Advanced (optional):** a top-down floor-plan view is available inside the Heatmap page -
+tick *“Advanced - top-down floor-plan view”* to map the camera onto a floor plan. Not needed
+for the core camera-space heatmap.
 """)

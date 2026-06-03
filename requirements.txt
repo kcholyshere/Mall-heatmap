@@ -2,6 +2,7 @@ ipykernel
 nbconvert
 python-dotenv
 ultralytics
+lap
 opencv-python
 matplotlib
 numpy
