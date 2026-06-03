@@ -65,6 +65,18 @@ def build_heatmap(df, xcol, ycol, bins, range_, sigma=SIGMA, normalise=True):
     return h
 
 
+def sampled_frame_count(total_frames, fps, start_frame=1, end_frame=None):
+    """Number of frames detection actually sampled in the inclusive [start, end] range.
+
+    Mirrors the sampling grid used by the detection loop and `pick_background_frame`
+    (1 frame per second: frames 1, 1+interval, ...). Used to turn summed detection counts
+    into an average occupancy (people present per sampled frame). Never returns < 1.
+    """
+    interval = max(1, round(fps))
+    end_frame = total_frames if end_frame is None else end_frame
+    return max(len(range(start_frame, int(end_frame) + 1, interval)), 1)
+
+
 def pick_background_frame(video_path, detections_path, fps, total_frames):
     """Return the first sampled frame with 0 detections, falling back to fewest detections.
 

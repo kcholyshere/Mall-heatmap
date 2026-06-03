@@ -10,7 +10,7 @@ from calibration_panel import render_calibration
 from src.heatmap import (CAM_H, CAM_W, FLOOR_H, FLOOR_W,
                          backproject, build_heatmap, build_reliability_mask,
                          compute_confidence_cutoff, pick_background_frame,
-                         project_points)
+                         project_points, sampled_frame_count)
 
 # Off-palette pink for the model-reliability overlay - deliberately unlike any heatmap colourmap.
 RELIABILITY_COLOR = "#FF2BD6"
@@ -55,7 +55,10 @@ with col_ctrl:
     sigma = st.slider("Smoothing (sigma)", 5, 80, 30)
     colormap = st.selectbox("Colormap", ["hot", "jet", "plasma", "YlOrRd"])
     alpha = st.slider("Heatmap opacity", 0.1, 1.0, 0.6, step=0.05)
-    time_norm = st.checkbox("Time-normalised (people/min)", value=True)
+    relative = st.checkbox(
+        "Relative scale (0-1)", value=False,
+        help="Off: average people present per sampled frame (honest occupancy). "
+             "On: relative 0-1 (clean shape, comparable across clips).")
     conf_threshold = st.slider(
         "Confidence threshold", 0.1, 0.9, 0.5, step=0.05,
         help="Minimum YOLO confidence to count a detection. Raising it removes weak/false "
@@ -70,7 +73,7 @@ with col_ctrl:
 # --- Camera-space heatmap (default, no calibration needed) ---
 fps = st.session_state.get("fps", 1.0)
 total_frames = st.session_state.get("total_frames") or df_raw["frame_id"].max()
-duration_min = max(total_frames / fps / 60, 1e-6)
+n_sampled = sampled_frame_count(total_frames, fps)
 
 video_path = st.session_state.get("video_path")
 bg = get_background_frame(video_path, st.session_state["detections_path"], fps, total_frames) if video_path else None
@@ -87,14 +90,14 @@ else:
 df_plot = df_raw[df_raw["confidence"] >= conf_threshold] if "confidence" in df_raw.columns else df_raw
 raw_heatmap = build_heatmap(df_plot, "x", "y", [frame_w, frame_h], [[0, frame_w], [0, frame_h]],
                             sigma=sigma, normalise=False)
-if time_norm:
-    cam_heatmap = raw_heatmap / duration_min
-    cbar_label = "people / min"
-    vmax = cam_heatmap.max() if cam_heatmap.max() > 0 else 1
-else:
+if relative:
     cam_heatmap = raw_heatmap / raw_heatmap.max() if raw_heatmap.max() > 0 else raw_heatmap
     cbar_label = "relative occupancy"
     vmax = 1
+else:
+    cam_heatmap = raw_heatmap / n_sampled
+    cbar_label = "avg people present"
+    vmax = cam_heatmap.max() if cam_heatmap.max() > 0 else 1
 
 cutoff_y = compute_confidence_cutoff(df_raw, threshold=conf_threshold, frame_h=frame_h)
 reliability_mask = (build_reliability_mask(df_raw, threshold=conf_threshold, frame_w=frame_w, frame_h=frame_h)
@@ -121,6 +124,10 @@ with col_view:
     plt.close(fig)
     st.download_button("Download heatmap PNG", buf.getvalue(),
                        file_name="heatmap.png", mime="image/png", key="dl_camera")
+    if not relative:
+        st.caption("Each cell is the average number of people present per sampled frame "
+                   "(~1 frame/s) - small decimals are normal; the spatial pattern is the point. "
+                   "For a genuine footfall *rate*, use the Tracking page (Step 3).")
     if show_reliability:
         st.caption("Pink hatched zones - low model reliability (far field / weak confidence). "
                    "Occupancy here is under-counted; an un-hatched-but-empty area is genuinely empty, "

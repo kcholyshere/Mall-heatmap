@@ -7,7 +7,7 @@ import streamlit as st
 
 from src.heatmap import (CAM_H, CAM_W, FLOOR_H, FLOOR_W,
                          build_heatmap, compute_confidence_cutoff,
-                         pick_background_frame, project_points)
+                         pick_background_frame, project_points, sampled_frame_count)
 from src.tracking import compute_dwell, footfall_stats, moving_track_ids
 
 st.set_page_config(page_title="Time Analysis", layout="wide")
@@ -36,7 +36,10 @@ clamp_end = rec_end_dt is not None and (rec_end_dt - ref_dt) < timedelta(days=1)
 
 sigma = st.slider("Smoothing (sigma)", 5, 80, 30)
 colormap = st.selectbox("Colormap", ["hot", "jet", "plasma", "YlOrRd"])
-time_norm = st.checkbox("Time-normalised (people/min)", value=True)
+relative = st.checkbox(
+    "Relative scale (0-1)", value=False,
+    help="Off: average people present per sampled frame (honest occupancy). "
+         "On: relative 0-1 (clean shape, comparable across windows).")
 conf_threshold = st.slider(
     "Confidence threshold", 0.1, 0.9, 0.5, step=0.05,
     help="Minimum YOLO confidence to count a detection. Raising it removes weak/false "
@@ -80,7 +83,9 @@ if len(window_raw) == 0:
     st.stop()
 
 # --- Camera-space heatmap (default) ---
-window_min = max((end_dt - start_dt).total_seconds() / 60, 1e-6)
+n_sampled = sampled_frame_count(
+    st.session_state.get("total_frames") or int(df_raw["frame_id"].max()),
+    fps, start_frame, end_frame)
 
 video_path = st.session_state.get("video_path")
 total_frames = st.session_state.get("total_frames") or int(df_raw["frame_id"].max())
@@ -93,14 +98,14 @@ else:
 window_plot = window_raw[window_raw["confidence"] >= conf_threshold] if "confidence" in window_raw.columns else window_raw
 raw_heatmap = build_heatmap(window_plot, "x", "y", [frame_w, frame_h], [[0, frame_w], [0, frame_h]],
                             sigma=sigma, normalise=False)
-if time_norm:
-    cam_heatmap = raw_heatmap / window_min
-    cbar_label = "people / min"
-    vmax = cam_heatmap.max() if cam_heatmap.max() > 0 else 1
-else:
+if relative:
     cam_heatmap = raw_heatmap / raw_heatmap.max() if raw_heatmap.max() > 0 else raw_heatmap
     cbar_label = "relative occupancy"
     vmax = 1
+else:
+    cam_heatmap = raw_heatmap / n_sampled
+    cbar_label = "avg people present"
+    vmax = cam_heatmap.max() if cam_heatmap.max() > 0 else 1
 
 cutoff_y = compute_confidence_cutoff(window_raw, threshold=conf_threshold, frame_h=frame_h)
 

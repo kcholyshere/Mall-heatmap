@@ -37,10 +37,16 @@ if "detections_path" in st.session_state:
     st.info(f"Detections already loaded from `{st.session_state['detections_path']}`. "
             "Upload a new video to rerun.")
 
-uploaded = st.file_uploader("Upload a surveillance video", type=["mp4", "avi", "mov", "mkv"])
+uploaded = st.file_uploader(
+    "Upload a surveillance video",
+    type=["mp4", "avi", "mov", "mkv", "ts", "m4v", "wmv", "flv", "asf"])
 local_path = st.text_input(
     "…or path to a video already on this machine",
-    help="Use this for large files - the uploader is size-capped. Absolute or relative path.")
+    help="Best for large files - the uploader holds the file in memory (cap 5 GB), while this "
+         "reads from disk. Accepts any format your system's ffmpeg can decode. Absolute or "
+         "relative path.")
+st.caption("Files over ~2 GB: use the local path above. Proprietary NVR formats (e.g. Dahua "
+           ".dav, raw .264/.265) should be converted to .mp4 with ffmpeg first.")
 
 video_path = None
 if uploaded:

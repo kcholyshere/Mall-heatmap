@@ -1,4 +1,5 @@
 [server]
 # Raise the upload cap (default 200 MB) for large surveillance clips.
-# For very large files, prefer the "local file path" input on the Upload page.
-maxUploadSize = 2048
+# The uploader holds the whole file in memory, so this can't scale to tens of GB - for
+# anything larger, use the "local file path" input on the Upload page (reads from disk).
+maxUploadSize = 5120
