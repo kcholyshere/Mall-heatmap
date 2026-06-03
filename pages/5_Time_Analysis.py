@@ -8,9 +8,10 @@ import streamlit as st
 from src.heatmap import (CAM_H, CAM_W, FLOOR_H, FLOOR_W,
                          build_heatmap, compute_confidence_cutoff,
                          pick_background_frame, project_points)
+from src.tracking import compute_dwell, footfall_stats, moving_track_ids
 
 st.set_page_config(page_title="Time Analysis", layout="wide")
-st.title("Step 3 - Time-Based Analysis")
+st.title("Step 4 - Time-Based Analysis")
 
 
 @st.cache_data
@@ -117,6 +118,49 @@ ax.set_title(f"{start_dt.strftime('%Y-%m-%d %H:%M')} - {end_dt.strftime('%H:%M')
 ax.axis("off")
 st.pyplot(fig)
 plt.close(fig)
+
+# --- Tracking insights for this window (only when tracking was run in Step 1) ---
+if "tracks_path" in st.session_state:
+    st.divider()
+    st.subheader("Tracking - this time window")
+    tracks_all = pd.read_csv(st.session_state["tracks_path"])
+    # Gate tracking on the clip's median confidence (as Step 3 does), not the heatmap's 0.5
+    # slider - so the two pages report the same footfall, and low-confidence far-field people
+    # aren't dropped. Static false positives are handled by the movement filter below.
+    if "confidence" in tracks_all.columns:
+        track_conf = round(min(0.9, max(0.1, tracks_all["confidence"].median())) / 0.05) * 0.05
+        tracks_all = tracks_all[tracks_all["confidence"] >= track_conf]
+    # Decide static-ness on the whole clip, not the window: a real person seen only briefly
+    # in a short window could look static within it.
+    keep = moving_track_ids(tracks_all)
+    wt = tracks_all[(tracks_all["frame_id"] >= start_frame) &
+                    (tracks_all["frame_id"] <= end_frame) &
+                    (tracks_all["track_id"].isin(keep))]
+    if wt.empty:
+        st.info("No tracked people in this window.")
+    else:
+        window_frames = end_frame - start_frame + 1
+        w_unique, w_throughput, w_durations = footfall_stats(wt, fps, window_frames)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Unique visitors", f"{w_unique:,}")
+        m2.metric("Throughput", f"{w_throughput:.1f} people/min")
+        m3.metric("Mean time in scene", f"{w_durations.mean():.1f} s")
+        st.caption("De-duplicated via track IDs, with static objects removed - a genuine "
+                   "footfall rate for the selected window.")
+        grid_n = st.slider("Dwell grid resolution (cells across)", 8, 48, 24, step=4,
+                           key="ta_dwell_grid")
+        grid_rows = max(1, round(grid_n * frame_h / frame_w))
+        dwell = compute_dwell(wt, fps, grid_n, grid_rows, frame_w, frame_h)
+        fig, ax = plt.subplots(figsize=(8, 6))
+        if bg is not None:
+            ax.imshow(bg)
+        im = ax.imshow(np.ma.masked_equal(dwell, 0), cmap="hot", alpha=0.65,
+                       extent=[0, frame_w, frame_h, 0], vmin=0)
+        plt.colorbar(im, ax=ax, shrink=0.6, label="mean dwell (s)")
+        ax.axis("off")
+        ax.set_title(f"Dwell-time {start_dt.strftime('%H:%M')} - {end_dt.strftime('%H:%M')}")
+        st.pyplot(fig)
+        plt.close(fig)
 
 # --- Top-down view (opt-in) ---
 with st.expander("Top-down floor plan view (requires calibration)"):

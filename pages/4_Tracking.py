@@ -7,10 +7,11 @@ import streamlit as st
 from matplotlib.collections import LineCollection
 
 from src.heatmap import CAM_H, CAM_W, pick_background_frame
-from src.tracking import build_trajectories, compute_dwell, footfall_stats
+from src.tracking import (build_trajectories, compute_dwell, footfall_stats,
+                          filter_static_tracks)
 
 st.set_page_config(page_title="Tracking", layout="wide")
-st.title("Step 4 - Tracking Insights")
+st.title("Step 3 - Tracking Insights")
 
 if "tracks_path" not in st.session_state:
     st.warning("Run Step 1 with **person tracking enabled** first - the heatmap detection "
@@ -55,6 +56,31 @@ df = df_all[df_all["confidence"] >= conf_threshold]
 if df.empty:
     st.error("No tracked detections above this confidence threshold - lower it to see results.")
     st.stop()
+
+# Static objects (parking locks, signs, bins) get tagged as people at the low confidence
+# tracking needs - but they don't move, while people do. Drop tracks that barely move.
+hide_static = st.checkbox(
+    "Hide static objects", value=True,
+    help="Removes tracks that stay put for their whole life (furniture mistaken for a person). "
+         "People walk; a parking lock or sign does not. Disable to see every track.")
+if hide_static:
+    with st.expander("Static-filter sensitivity"):
+        min_move = st.slider(
+            "Minimum movement (body-lengths)", 0.1, 2.0, 0.5, step=0.1,
+            help="A track is kept only if its foot point travels at least this many of its own "
+                 "heights. Lower = stricter about calling something static.")
+    n_before = df["track_id"].nunique()
+    df = filter_static_tracks(df, min_disp_per_height=min_move)
+    removed = n_before - df["track_id"].nunique()
+    if "h" not in df_all.columns:
+        st.info("These tracks were recorded before static filtering existed - re-run tracking "
+                "in Step 1 to enable it.")
+    elif removed:
+        st.caption(f"Removed **{removed}** static object(s).")
+    if df.empty:
+        st.error("Every track looked static at this setting - raise the threshold or disable "
+                 "the filter.")
+        st.stop()
 
 # --- A. Footfall / throughput (de-duplicated via track IDs) ---
 st.header("Footfall")

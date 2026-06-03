@@ -27,11 +27,36 @@ def run_tracking(video_path, model, conf=0.25, max_frames=None, progress_cb=None
                 "track_id": int(box.id[0].item()),
                 "x": (x1 + x2) / 2,
                 "y": y2,
+                "h": y2 - y1,  # bbox height — used to measure movement in body-lengths
                 "confidence": round(box.conf[0].item(), 4),
             })
         if progress_cb is not None:
             progress_cb(frame_id)
-    return pd.DataFrame(rows, columns=["frame_id", "track_id", "x", "y", "confidence"])
+    return pd.DataFrame(rows, columns=["frame_id", "track_id", "x", "y", "h", "confidence"])
+
+
+def moving_track_ids(df, min_disp_per_height=0.5):
+    """Return the set of track_ids that move enough to be a person rather than a static object.
+
+    Static furniture (a parking lock, sign, bin) sits in one spot for its whole life, while a
+    person walks. Movement is measured in body-lengths (total foot-point displacement / median
+    bbox height) so near and far subjects are comparable. Falls back to keeping every track when
+    height is unavailable (e.g. tracks recorded before the `h` column existed).
+    """
+    if df.empty or "h" not in df.columns:
+        return set(df["track_id"].unique())
+    keep = set()
+    for tid, g in df.groupby("track_id"):
+        disp = float(np.hypot(g["x"].max() - g["x"].min(), g["y"].max() - g["y"].min()))
+        med_h = float(g["h"].median())
+        if med_h and disp / med_h >= min_disp_per_height:
+            keep.add(int(tid))
+    return keep
+
+
+def filter_static_tracks(df, min_disp_per_height=0.5):
+    """Drop tracks that barely move (static false positives). See `moving_track_ids`."""
+    return df[df["track_id"].isin(moving_track_ids(df, min_disp_per_height))]
 
 
 def footfall_stats(df, fps, total_frames):

@@ -22,7 +22,7 @@ def load_model():
 
 
 st.subheader("Recording start")
-st.caption("When the footage begins - used to label time windows in Step 3.")
+st.caption("When the footage begins - used to label time windows in Step 4.")
 col1, col2 = st.columns(2)
 with col1:
     ref_date = st.date_input("Recording date", value=datetime.today().date())
@@ -98,7 +98,7 @@ if video_path:
     enable_tracking = st.checkbox(
         "Enable person tracking (dense pass - slower, needs ~25-30 fps video)",
         help="Follows each person across frames (ByteTrack) to unlock unique footfall, "
-             "dwell-time and trajectories in Step 4. Processes every frame, so it is much "
+             "dwell-time and trajectories in Step 3. Processes every frame, so it is much "
              "slower than the 1-frame-per-second detection used for the heatmap.")
     max_frames = None
     if enable_tracking:
@@ -106,6 +106,8 @@ if video_path:
             "Limit to first N seconds (0 = whole video)", min_value=0, value=60, step=10,
             help="Caps a long clip so tracking stays quick for a demo.")
         max_frames = int(cap_s * fps) if cap_s else None
+        st.warning("Keep this tab open until tracking finishes - navigating away cancels it "
+                   "and you'll need to re-run.")
 
     if enable_tracking:
         if track_path.exists():
@@ -163,7 +165,7 @@ if video_path:
             f"Done - tracked **{tracks_df['track_id'].nunique():,}** unique people across "
             f"**{processed:,}** frames in **{elapsed:.1f}s**"
         )
-        st.info("Open the Tracking page (Step 4) in the sidebar.")
+        st.info("Open the Tracking page (Step 3) in the sidebar.")
 
     elif run_requested:
         model = load_model()
