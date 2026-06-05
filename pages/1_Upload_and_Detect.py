@@ -46,14 +46,23 @@ local_path = st.text_input(
          "reads from disk. Accepts any format your system's ffmpeg can decode. Absolute or "
          "relative path.")
 st.caption("Files over ~2 GB: use the local path above. Proprietary NVR formats (e.g. Dahua "
-           ".dav, raw .264/.265) should be converted to .mp4 with ffmpeg first.")
+           ".dav, raw .264/.265) should be converted to .mp4 first.")
 
 video_path = None
 if uploaded:
-    suffix = Path(uploaded.name).suffix
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(uploaded.read())
-        video_path = tmp.name
+    # Write the upload to a temp file once per unique file (keyed on name+size), then reuse it
+    # across reruns. Re-reading the uploader buffer and rewriting the temp file on every rerun
+    # produced an empty file (read position at EOF on the second read), which made the page
+    # look like it had lost the video and forced a re-upload whenever another widget (the
+    # tracking checkbox or the seconds cap) was toggled. getvalue() is position-independent.
+    upload_key = f"{uploaded.name}:{uploaded.size}"
+    if st.session_state.get("upload_key") != upload_key:
+        suffix = Path(uploaded.name).suffix
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(uploaded.getvalue())
+        st.session_state["upload_key"] = upload_key
+        st.session_state["uploaded_video_path"] = tmp.name
+    video_path = st.session_state["uploaded_video_path"]
     st.success(f"Video uploaded: **{uploaded.name}**")
 elif local_path:
     if Path(local_path).exists():
@@ -66,8 +75,7 @@ if video_path:
     st.session_state["video_path"] = video_path
 
     # A new video means a new camera view - drop any prior calibration so a previous
-    # camera's homography/floor plan can't bleed across (keyed on a stable file identity,
-    # since the uploader writes a fresh temp path on every rerun).
+    # camera's homography/floor plan can't bleed across (keyed on a stable file identity).
     video_id = uploaded.name if uploaded else local_path
     if st.session_state.get("video_id") != video_id:
         st.session_state["video_id"] = video_id
