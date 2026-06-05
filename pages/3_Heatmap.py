@@ -48,26 +48,27 @@ def get_background_frame(video_path, detections_path, fps, total_frames):
 df_raw = load_detections(st.session_state["detections_path"])
 st.write(f"**{len(df_raw):,}** detections across **{df_raw['frame_id'].nunique():,}** sampled frames")
 
-col_ctrl, col_view = st.columns([1, 2])
-
-with col_ctrl:
-    sigma = st.slider("Smoothing (sigma)", 5, 80, 30)
-    colormap = st.selectbox("Colormap", ["hot", "jet", "plasma", "YlOrRd"])
-    alpha = st.slider("Heatmap opacity", 0.1, 1.0, 0.6, step=0.05)
+with st.expander("Advanced settings"):
+    sigma = st.slider("Smoothing", 5, 80, 30,
+                      help="How much to blur the heatmap - higher = smoother blobs, "
+                           "lower = sharper detail.")
+    colormap = st.selectbox("Colour scheme", ["hot", "jet", "plasma", "YlOrRd"],
+                            help="Palette for the heatmap overlay.")
+    alpha = st.slider("Overlay opacity", 0.1, 1.0, 0.6, step=0.05,
+                      help="How strongly the heatmap is blended over the background frame.")
     relative = st.checkbox(
         "Relative scale (0-1)", value=False,
         help="Off: average people present per sampled frame (honest occupancy). "
              "On: relative 0-1 (clean shape, comparable across clips).")
     conf_threshold = st.slider(
-        "Confidence threshold", 0.1, 0.9, 0.5, step=0.05,
-        help="Minimum YOLO confidence to count a detection. Raising it removes weak/false "
-             "detections (e.g. a static object mistaken for a person) but also drops "
-             "uncertain far-field people.")
+        "Detection sensitivity", 0.1, 0.9, 0.5, step=0.05,
+        help="Lower keeps more uncertain / far-away detections; higher keeps only strong "
+             "ones (drops weak false positives such as a static object).")
     show_reliability = st.checkbox(
         "Show model-reliability overlay", value=False,
-        help="Shades zones where YOLO under-detects (far field and weak-confidence "
-             "cells). Absence of heat in a shaded zone does NOT mean the area is empty - "
-             "the model likely cannot see people there. Driven by the confidence threshold.")
+        help="Shades zones where the detector under-performs (far field / weak confidence). "
+             "Absence of heat in a shaded zone does NOT mean it's empty - the model likely "
+             "cannot see people there.")
 
 # --- Camera-space heatmap (default, no calibration needed) ---
 fps = st.session_state.get("fps", 1.0)
@@ -98,13 +99,10 @@ else:
     cbar_label = "occupancy"
     vmax = cam_heatmap.max() if cam_heatmap.max() > 0 else 1
 
-avg_in_view = len(df_plot) / n_sampled
 reliability_mask = (build_reliability_mask(df_raw, threshold=conf_threshold, frame_w=frame_w, frame_h=frame_h)
                     if show_reliability else None)
 
-with col_view:
-    if not relative:
-        st.metric("Average people in view", f"{avg_in_view:.1f}")
+with st.container():
     fig, ax = plt.subplots(figsize=(8, 6))
     if bg is not None:
         ax.imshow(bg)
@@ -125,8 +123,7 @@ with col_view:
     st.download_button("Download heatmap PNG", buf.getvalue(),
                        file_name="heatmap.png", mime="image/png", key="dl_camera")
     if not relative:
-        st.caption("Colour shows where people concentrate (low -> high); the "
-                   "'Average people in view' figure above is the honest scene-wide magnitude. "
+        st.caption("Colour shows where people concentrate (low -> high). "
                    "For a genuine footfall *rate*, use the Tracking page (Step 3).")
     if show_reliability:
         st.caption("Pink hatched zones - low model reliability (far field / weak confidence). "

@@ -34,17 +34,20 @@ total_frames = st.session_state.get("total_frames")
 rec_end_dt = ref_dt + timedelta(seconds=total_frames / fps + 1) if total_frames else None
 clamp_end = rec_end_dt is not None and (rec_end_dt - ref_dt) < timedelta(days=1)
 
-sigma = st.slider("Smoothing (sigma)", 5, 80, 30)
-colormap = st.selectbox("Colormap", ["hot", "jet", "plasma", "YlOrRd"])
-relative = st.checkbox(
-    "Relative scale (0-1)", value=False,
-    help="Off: average people present per sampled frame (honest occupancy). "
-         "On: relative 0-1 (clean shape, comparable across windows).")
-conf_threshold = st.slider(
-    "Confidence threshold", 0.1, 0.9, 0.5, step=0.05,
-    help="Minimum YOLO confidence to count a detection. Raising it removes weak/false "
-         "detections (e.g. a static object mistaken for a person) but also drops "
-         "uncertain far-field people.")
+with st.expander("Advanced settings"):
+    sigma = st.slider("Smoothing", 5, 80, 30,
+                      help="How much to blur the heatmap - higher = smoother blobs, "
+                           "lower = sharper detail.")
+    colormap = st.selectbox("Colour scheme", ["hot", "jet", "plasma", "YlOrRd"],
+                            help="Palette for the heatmap overlay.")
+    relative = st.checkbox(
+        "Relative scale (0-1)", value=False,
+        help="Off: average people present per sampled frame (honest occupancy). "
+             "On: relative 0-1 (clean shape, comparable across windows).")
+    conf_threshold = st.slider(
+        "Detection sensitivity", 0.1, 0.9, 0.5, step=0.05,
+        help="Lower keeps more uncertain / far-away detections; higher keeps only strong "
+             "ones (drops weak false positives such as a static object).")
 
 col_start, col_end = st.columns(2)
 with col_start:
@@ -106,9 +109,6 @@ else:
     cam_heatmap = raw_heatmap / n_sampled
     cbar_label = "occupancy"
     vmax = cam_heatmap.max() if cam_heatmap.max() > 0 else 1
-
-if not relative:
-    st.metric("Average people in view", f"{len(window_plot) / n_sampled:.1f}")
 
 fig, ax = plt.subplots(figsize=(8, 6))
 if bg is not None:

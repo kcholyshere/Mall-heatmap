@@ -7,7 +7,6 @@ from pathlib import Path
 import cv2
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from ultralytics import YOLO
 
 from src.tracking import run_tracking
@@ -113,8 +112,9 @@ if video_path:
             "Limit to first N seconds (0 = whole video)", min_value=0, value=60, step=10,
             help="Caps a long clip so tracking stays quick for a demo.")
         max_frames = int(cap_s * fps) if cap_s else None
-        st.warning("Keep this tab open until tracking finishes - navigating away cancels it "
-                   "and you'll need to re-run.")
+        if not track_path.exists():
+            st.warning("Keep this tab open until tracking finishes - navigating away cancels it "
+                       "and you'll need to re-run.")
 
     if enable_tracking:
         if track_path.exists():
@@ -125,10 +125,12 @@ if video_path:
             st.session_state["total_frames"] = int(pd.read_csv(track_path)["frame_id"].max())
             st.success("This video was already tracked - using cached tracks. "
                        "Open the Heatmap or Tracking page in the sidebar.")
-            with st.expander("Re-process this video"):
-                run_requested = st.button("Re-run tracking")
+            run_requested = st.button("Re-run tracking")
         else:
-            run_requested = st.button("Run Tracking")
+            run_requested = st.button(
+                "Run Tracking",
+                help="Follow each person across every frame (slower) to enable footfall, "
+                     "dwell-time and trajectories in Step 3.")
     elif det_path.exists():
         # Already processed - load automatically; don't make the user run detection again.
         st.session_state.pop("tracks_path", None)
@@ -136,11 +138,12 @@ if video_path:
         st.session_state["total_frames"] = total_meta
         st.success("This video was already processed - using cached detections. "
                    "Open the Heatmap page in the sidebar.")
-        with st.expander("Re-process this video"):
-            run_requested = st.button("Re-run detection")
+        run_requested = st.button("Re-run detection")
     else:
         st.session_state.pop("tracks_path", None)
-        run_requested = st.button("Run Detection")
+        run_requested = st.button(
+            "Run Detection",
+            help="Detect people about once per second (fast) to build the occupancy heatmap.")
 
     if run_requested and enable_tracking:
         model = load_model()
@@ -173,31 +176,6 @@ if video_path:
             f"**{processed:,}** frames in **{elapsed:.1f}s**"
         )
         st.info("Open the Tracking page (Step 3) in the sidebar.")
-        # Long runs let the user look away - chime + desktop notification on completion.
-        # Both fire while the tab is backgrounded; the chime is the reliable part (some
-        # browsers limit notification permission requests inside component iframes).
-        components.html(
-            """
-            <script>
-            try {
-              const ctx = new (window.AudioContext || window.webkitAudioContext)();
-              const o = ctx.createOscillator(), g = ctx.createGain();
-              o.connect(g); g.connect(ctx.destination);
-              o.frequency.value = 880; g.gain.value = 0.1;
-              o.start(); o.stop(ctx.currentTime + 0.3);
-            } catch (e) {}
-            if ("Notification" in window) {
-              const show = () => new Notification("Tracking complete",
-                  {body: "Your video has been tracked - open Step 3."});
-              if (Notification.permission === "granted") { show(); }
-              else if (Notification.permission !== "denied") {
-                Notification.requestPermission().then(p => { if (p === "granted") show(); });
-              }
-            }
-            </script>
-            """,
-            height=0,
-        )
 
     elif run_requested:
         model = load_model()

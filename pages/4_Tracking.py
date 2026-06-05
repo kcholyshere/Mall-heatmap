@@ -44,31 +44,31 @@ if bg is not None:
 else:
     frame_w, frame_h = st.session_state.get("frame_size", (CAM_W, CAM_H))
 
-# Default to this clip's median detection confidence: far-field subjects are detected at
-# lower confidence, so a fixed default would hide most of them on distant footage.
-default_conf = round(min(0.9, max(0.1, df_all["confidence"].median())) / 0.05) * 0.05
-conf_threshold = st.slider(
-    "Confidence threshold", 0.1, 0.9, round(default_conf, 2), step=0.05,
-    help="Minimum YOLO confidence to keep a tracked detection. Raising it drops weak/false "
-         "tracks (e.g. a static object briefly mistaken for a person). Defaults to this clip's "
-         "median confidence, since distant people are detected less confidently.")
+with st.expander("Advanced settings"):
+    # Static objects (parking locks, signs, bins) get tagged as people at the low confidence
+    # tracking needs - but they don't move, while people do. Drop tracks that barely move.
+    hide_static = st.checkbox(
+        "Hide static objects", value=True,
+        help="Removes tracks that stay put for their whole life (furniture mistaken for a person). "
+             "People walk; a parking lock or sign does not. Disable to see every track.")
+    if hide_static:
+        min_move = st.slider(
+            "Minimum movement (body-lengths)", 0.1, 2.0, 0.5, step=0.1,
+            help="A track is kept only if its foot point travels at least this many of its own "
+                 "heights. Lower = stricter about calling something static.")
+    # Default to this clip's median detection confidence: far-field subjects are detected at
+    # lower confidence, so a fixed default would hide most of them on distant footage.
+    default_conf = round(min(0.9, max(0.1, df_all["confidence"].median())) / 0.05) * 0.05
+    conf_threshold = st.slider(
+        "Detection sensitivity", 0.1, 0.9, round(default_conf, 2), step=0.05,
+        help="Lower keeps more uncertain / far-away detections; higher keeps only strong ones. "
+             "Defaults to this clip's median, since distant people are detected less confidently.")
 df = df_all[df_all["confidence"] >= conf_threshold]
 if df.empty:
     st.error("No tracked detections above this confidence threshold - lower it to see results.")
     st.stop()
 
-# Static objects (parking locks, signs, bins) get tagged as people at the low confidence
-# tracking needs - but they don't move, while people do. Drop tracks that barely move.
-hide_static = st.checkbox(
-    "Hide static objects", value=True,
-    help="Removes tracks that stay put for their whole life (furniture mistaken for a person). "
-         "People walk; a parking lock or sign does not. Disable to see every track.")
 if hide_static:
-    with st.expander("Static-filter sensitivity"):
-        min_move = st.slider(
-            "Minimum movement (body-lengths)", 0.1, 2.0, 0.5, step=0.1,
-            help="A track is kept only if its foot point travels at least this many of its own "
-                 "heights. Lower = stricter about calling something static.")
     n_before = df["track_id"].nunique()
     df = filter_static_tracks(df, min_disp_per_height=min_move)
     removed = n_before - df["track_id"].nunique()
@@ -122,7 +122,8 @@ st.download_button("Download trajectories PNG", buf.getvalue(),
 st.divider()
 st.header("Dwell-time")
 st.caption("Average seconds a person spends in each cell. Hot cells are where people linger.")
-grid_n = st.slider("Grid resolution (cells across)", 8, 48, 24, step=4)
+grid_n = st.slider("Detail (grid cells across)", 8, 48, 24, step=4,
+                   help="How finely the scene is divided for dwell-time. Higher = finer detail.")
 grid_rows = max(1, round(grid_n * frame_h / frame_w))
 dwell = compute_dwell(df, fps, grid_n, grid_rows, frame_w, frame_h)
 
