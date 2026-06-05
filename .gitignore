@@ -100,3 +100,6 @@ CLAUDE.md
 /data/
 
 /agent_docs/
+
+# Claude Code local session files
+/.claude/
