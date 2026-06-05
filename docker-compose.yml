@@ -1,0 +1,9 @@
+services:
+  mall-heatmap:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      # Persist detections/tracks and let the "local file path" input reach host videos.
+      - ./data:/app/data
+    restart: unless-stopped

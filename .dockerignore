@@ -1,0 +1,15 @@
+# Keep the build context (and image) lean. Heavy/irrelevant paths excluded.
+# NOTE: models/ is intentionally NOT excluded - yolov8n.pt must ship in the image.
+.venv/
+.git/
+.gitignore
+.claude/
+data/
+notebooks/
+references/
+reports/
+__pycache__/
+**/__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.env
