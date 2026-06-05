@@ -4,11 +4,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
+from matplotlib.collections import LineCollection
 
 from src.heatmap import (CAM_H, CAM_W, FLOOR_H, FLOOR_W,
                          build_heatmap, pick_background_frame, project_points,
                          sampled_frame_count)
-from src.tracking import compute_dwell, footfall_stats, moving_track_ids
+from src.tracking import (build_trajectories, compute_dwell, footfall_stats,
+                          moving_track_ids)
 
 st.set_page_config(page_title="Time Analysis", layout="wide")
 st.title("Step 4 - Time-Based Analysis")
@@ -152,6 +154,29 @@ if "tracks_path" in st.session_state:
         m3.metric("Mean time in scene", f"{w_durations.mean():.1f} s")
         st.caption("De-duplicated via track IDs, with static objects removed - a genuine "
                    "footfall rate for the selected window.")
+
+        # Trajectories for this window - the same path overlay as Step 3, scoped to the window.
+        ta_max_len_s = max(0.2, round(wt.groupby("track_id").size().max() / fps, 1))
+        ta_min_secs = st.slider(
+            "Minimum track length (seconds)", 0.0, ta_max_len_s, min(0.3, ta_max_len_s),
+            step=0.1, key="ta_min_track",
+            help="Hide very short tracks - usually flicker or false positives.")
+        trajectories = build_trajectories(wt, min_len=max(1, int(ta_min_secs * fps)))
+        fig, ax = plt.subplots(figsize=(8, 6))
+        if bg is not None:
+            ax.imshow(bg)
+        cmap = plt.colormaps["tab20"]
+        segments = [path for _, path in trajectories if len(path) >= 2]
+        colors = [cmap(i % 20) for i in range(len(segments))]
+        ax.add_collection(LineCollection(segments, colors=colors, linewidths=1.5, alpha=0.8))
+        ax.set_xlim(0, frame_w)
+        ax.set_ylim(frame_h, 0)
+        ax.axis("off")
+        ax.set_title(f"{len(trajectories)} person paths "
+                     f"{start_dt.strftime('%H:%M')} - {end_dt.strftime('%H:%M')}")
+        st.pyplot(fig)
+        plt.close(fig)
+
         grid_n = st.slider("Dwell grid resolution (cells across)", 8, 48, 24, step=4,
                            key="ta_dwell_grid")
         grid_rows = max(1, round(grid_n * frame_h / frame_w))
